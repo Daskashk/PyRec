@@ -117,7 +117,7 @@ This is a personal tool. I cannot guarantee it will work in all environments, bu
 
 If you have questions, suggestions, or want to contribute, you can contact me through:
 
-*   **Codeberg**: Just open an [issue](https://codeberg.org/daskashk/ffmpeg_screencap/issues) with your reportsa or questions.
+*   **Codeberg**: Just open an [issue](https://codeberg.org/daskashk/ffmpeg_screencap/issues) with your report or questions.
 *   **Matrix**: https://matrix.to/#/@narbb33:matrix.org
 
 
