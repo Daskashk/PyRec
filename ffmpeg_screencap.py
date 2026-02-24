@@ -1,344 +1,323 @@
-# Importación de módulos necesarios
+#!/usr/bin/env python3
+"""
+Secure Screen Recorder Script
+Supports X11 and Wayland with area selection.
+"""
+
 import subprocess
 import os
+import sys
+import json
+import shutil
+import re
+from pathlib import Path
 
+# Configuration
+CONFIG_FILE = "config.json"
+ALLOWED_CODECS = {"libx264", "libx265", "libvpx-vp9", "aac", "libmp3lame", "libopus"}
+DEFAULT_RESOLUTION = "1920x1080"
 
-def check_path(bin):
-    """ "Verifica si el binario existe en el PATH del sistema"""
-    raw_path = str(os.getenv("PATH"))
-    path = raw_path.split(":")
-    for dir in path:
-        if os.path.exists(dir) and bin in os.listdir(dir):
-            return True
-    return False
+def sanitize_string(text):
+    """
+    Removes potentially dangerous characters from strings 
+    to prevent command injection or path traversal.
+    """
+    # Allow only alphanumeric, underscores, dashes, and dots.
+    return re.sub(r'[^\w\-.]', '_', str(text))
 
+def sanitize_filename(filename):
+    """Ensures the filename is safe and has an extension."""
+    safe_name = sanitize_string(filename)
+    if not safe_name:
+        safe_name = "output"
+    # Ensure extension exists (default .mp4)
+    if "." not in safe_name:
+        safe_name += ".mp4"
+    return safe_name
 
-# Función para grabar la pantalla
-def grabar_pantalla(
-    resolucion,
-    framerate,
-    archivo_salida,
-    audio,
-    microfono,
-    codec,
-    calidad,
-    tasa_bits_video,
-    tasa_bits_audio,
-    tasa_bits_microfono,
-    codec_audio,
-    codec_microfono,
-    server_type,
-):
-    try:
-        # Configuración de grabación
-        print("\nConfiguración de grabación:")
-        print("---------------------------")
-        config = {
-            "Resolución": resolucion,
-            "Tasa de frames": framerate,
-            "Archivo de salida": archivo_salida,
-            "Incluir audio": "Sí" if audio else "No",
-            "Incluir microfono": "Sí" if microfono else "No",
-            "Codec de video": codec,
-            "Calidad de video": calidad,
-            "Tasa de bits de video": tasa_bits_video,
-            "Tasa de bits de audio": tasa_bits_audio,
-            "Tasa de bits de microfono": tasa_bits_microfono,
-            "Codec de audio": codec_audio,
-            "Codec de microfono": codec_microfono,
-        }
-        for key, value in config.items():
-            print(f"{key}: {value}")
-        print("---------------------------")
-        print("Presione Ctrl+C para detener la grabación...\n")
-
-        # Construcción del comando de grabación
-        if server_type == "x11":
-            comando = f"ffmpeg -f x11grab -framerate {framerate} -video_size {resolucion} -i :0.0"
-        elif server_type == "wayland":
-            # comando = f"ffmpeg -f wayland -framerate {framerate} -video_size {resolucion} -i wayland"
-            comando = (
-                f"wf-recorder --framerate {framerate} --geometry '0,0 {resolucion}'"
-            )
-        else:
-            raise Exception("Servidor de pantalla no soportado.")
-
-        if (audio or microfono) and not server_type == "wayland":
-            audio_codec = f" -c:a {codec_audio} -b:a {tasa_bits_audio}k"
-            if check_path("pipewire"):
-                comando += " -f pipewire-0 -i default" + audio_codec
-            elif check_path("pulseaudio"):
-                comando += " -f pulse -i default" + audio_codec
-            else:
-                print(
-                    "No se detectó servidor de audio. La grabación de audio no está disponible."
-                )
-                audio = False
-                microfono = False
-        elif (audio or microfono) and server_type == "wayland":
-            comando += "-a"
-
-        if server_type == "x11":
-            comando += f" -c:v {codec} -crf {get_crf(calidad)} -b:v {tasa_bits_video}k"
-            comando += f" -preset ultrafast -tune zerolatency {archivo_salida}"
-        elif server_type == "wayland":
-            comando += f" -c {codec} -p crf={get_crf(calidad)} -p b={tasa_bits_video}K"
-            comando += f" -f {archivo_salida}"
-        # if audio or microfono:
-        # comando += f" -c:a {codec_audio} -b:a {tasa_bits_audio}k"
-
-        # Ejecución del comando de grabación
-        subprocess.run(comando, shell=True, check=True)
-
-    except subprocess.CalledProcessError as e:
-        print(f"Error al ejecutar ffmpeg: {e}")
-    except KeyboardInterrupt:
-        print("\nGrabación detenida por el usuario.")
-    except Exception as e:
-        print(f"Error inesperado: {e}")
-
-
-# Función para obtener la calidad de video
 def get_crf(calidad):
-    # Mapeo de calidad a CRF
-    calidad_crf = {"alta": 18, "media": 23, "baja": 28}
-    return calidad_crf.get(calidad, 23)
+    """Maps quality string to CRF integer."""
+    quality_map = {"alta": 18, "media": 23, "baja": 28, "high": 18, "medium": 23, "low": 28}
+    return quality_map.get(calidad.lower(), 23)
 
-
-# Función para obtener el servidor de pantalla
 def get_server_type():
-    # Detección del servidor de pantalla
-    server = os.getenv("XDG_SESSION_TYPE")
-    if not server:
-        return None
-    return server
+    """Detects the display server protocol."""
+    return os.getenv("XDG_SESSION_TYPE")
 
+class ScreenRecorder:
+    def __init__(self):
+        self.config = {}
+        self.server_type = get_server_type()
+        self.geometry = None # Stores selected area dimensions
 
-# Función para obtener la resolución de la pantalla
-def get_monitor_resolution(server_type):
-    # Obtención de la resolución de la pantalla
-    if server_type == "x11":
-        output = subprocess.check_output(["xrandr", "-q", "-d", ":0"])
-        lines = output.decode("utf-8").splitlines()
-        for line in lines:
-            if "*" in line:
-                resolution = line.split()[0]
-                return resolution
-    elif server_type == "wayland":
-        output = subprocess.check_output(["wlr-randr"])
-        lines = output.decode("utf-8").splitlines()
-        for line in lines:
-            if "current" in line:
-                resolution = line.split()[0]
-                return resolution
-    return None
+    def check_dependencies(self):
+        """Verifies required system binaries."""
+        if not self.server_type:
+            print("Error: Display server not detected (X11/Wayland).")
+            sys.exit(1)
 
+        deps = []
+        if self.server_type == "x11":
+            deps = ["ffmpeg", "slop"] # slop for area selection
+        elif self.server_type == "wayland":
+            deps = ["wf-recorder", "slurp"] # slurp for area selection
 
-# Función para guardar la configuración
-def save_config(config, filename):
-    # Guardado de la configuración en un archivo
-    with open(filename, "w") as f:
-        for key, value in config.items():
-            f.write(f"{key}: {value}\n")
+        for dep in deps:
+            if not shutil.which(dep):
+                print(f"Error: Required dependency '{dep}' not found in PATH.")
+                if dep in ["slop", "slurp"]:
+                    print(f"Info: Please install '{dep}' to enable area selection.")
+                sys.exit(1)
 
+    def select_area(self):
+        """Invokes slop/slurp to let the user select a screen region."""
+        print("\n>>> Select the recording area on your screen...")
+        try:
+            if self.server_type == "x11":
+                # slop format: WxH+X+Y
+                result = subprocess.run(
+                    ["slop", "-f", "%wx%h+%x+%y"],
+                    capture_output=True, text=True, check=True
+                )
+                self.geometry = result.stdout.strip()
+            
+            elif self.server_type == "wayland":
+                # slurp format: WxH+X,Y
+                result = subprocess.run(
+                    ["slurp", "-f", "%wx%h+%x,%y"],
+                    capture_output=True, text=True, check=True
+                )
+                self.geometry = result.stdout.strip()
+            
+            print(f"Area selected: {self.geometry}")
+            return True
 
-# Función para cargar la configuración
-def load_config(filename):
-    # Carga de la configuración desde un archivo
-    config = {}
-    try:
-        with open(filename, "r") as f:
-            for line in f.readlines():
-                key, value = line.strip().split(": ")
-                config[key] = value
-        return config
-    except FileNotFoundError:
-        print(f"El archivo {filename} no existe.")
-        return None
+        except subprocess.CalledProcessError:
+            print("Area selection cancelled or failed. Recording full screen.")
+            self.geometry = None
+            return False
+        except Exception as e:
+            print(f"Unexpected error during area selection: {e}")
+            self.geometry = None
+            return False
 
+    def get_monitor_resolution(self):
+        """Fallback to detect monitor resolution if area not selected."""
+        try:
+            if self.server_type == "x11":
+                output = subprocess.check_output(["xrandr", "-q", "-d", ":0"], stderr=subprocess.DEVNULL).decode()
+                for line in output.splitlines():
+                    if " connected" in line and "*" in line:
+                        parts = line.split()
+                        for i, part in enumerate(parts):
+                            if "*" in part:
+                                return parts[i-1]
+            elif self.server_type == "wayland":
+                if shutil.which("wlr-randr"):
+                    output = subprocess.check_output(["wlr-randr"]).decode()
+                    for line in output.splitlines():
+                        if "current" in line:
+                            return line.split()[0]
+        except Exception:
+            pass
+        return DEFAULT_RESOLUTION
 
-# Función principal
+    def prompt_user(self, prompt, default, type_cast=str):
+        """Helper for user input with default values."""
+        val = input(f"{prompt} ({default}): ").strip()
+        if not val:
+            return default
+        try:
+            return type_cast(val)
+        except ValueError:
+            print(f"Invalid input. Using default: {default}.")
+            return default
+
+    def configure_interactive(self, use_defaults=False):
+        """Interactive configuration setup."""
+        print(f"\nConfiguration Mode: {'Automatic' if use_defaults else 'Custom'}")
+        
+        detected_res = self.get_monitor_resolution()
+        
+        # Ask for area selection first
+        select_opt = "n"
+        if not use_defaults:
+            select_opt = input("Select recording area manually? (y/n) [n]: ").lower()
+        
+        if select_opt == "y":
+            if not self.select_area():
+                self.config["resolucion"] = detected_res
+        else:
+            self.config["resolucion"] = detected_res
+
+        if use_defaults:
+            self.config["framerate"] = 60
+            self.config["archivo_salida"] = "output.mp4"
+            self.config["codec"] = "libx264"
+            self.config["calidad"] = "alta"
+            self.config["tasa_bits_video"] = 5000
+            self.config["audio"] = True
+            self.config["codec_audio"] = "aac"
+            self.config["tasa_bits_audio"] = 128
+            
+            audio_in = input("Include system audio? (y/n) [y]: ").lower()
+            self.config["audio"] = audio_in != "n"
+        else:
+            # Custom inputs
+            self.config["framerate"] = self.prompt_user("Framerate", 60, int)
+            raw_filename = input(f"Output filename (output.mp4): ") or "output.mp4"
+            self.config["archivo_salida"] = sanitize_filename(raw_filename)
+            
+            codec = self.prompt_user("Video Codec", "libx264")
+            if codec not in ALLOWED_CODECS:
+                print(f"Warning: Codec '{codec}' is not in the recommended list. Use with caution.")
+            self.config["codec"] = sanitize_string(codec) # Sanitize strictly
+            
+            self.config["calidad"] = self.prompt_user("Quality (high/medium/low)", "high")
+            self.config["tasa_bits_video"] = self.prompt_user("Video Bitrate (kbps)", 5000, int)
+            
+            audio_in = input("Include system audio? (y/n) [n]: ").lower()
+            self.config["audio"] = audio_in == "y"
+            
+            if self.config["audio"]:
+                self.config["codec_audio"] = self.prompt_user("Audio Codec", "aac")
+                self.config["tasa_bits_audio"] = self.prompt_user("Audio Bitrate (kbps)", 128, int)
+
+    def save_config(self, filename=CONFIG_FILE):
+        try:
+            with open(filename, "w") as f:
+                json.dump(self.config, f, indent=4)
+        except IOError as e:
+            print(f"Error saving config: {e}")
+
+    def load_config(self, filename=CONFIG_FILE):
+        try:
+            with open(filename, "r") as f:
+                self.config = json.load(f)
+            print(f"Configuration loaded from {filename}")
+            return True
+        except (FileNotFoundError, json.JSONDecodeError):
+            return False
+
+    def build_command(self):
+        """Constructs the secure command list for subprocess."""
+        cmd = []
+        
+        if self.server_type == "x11":
+            cmd = ["ffmpeg"]
+            
+            # Video Input
+            cmd.extend(["-f", "x11grab"])
+            cmd.extend(["-framerate", str(self.config["framerate"])])
+            
+            if self.geometry:
+                # User selected specific area
+                # Geometry format from slop is WxH+X+Y
+                cmd.extend(["-video_size", self.geometry.split('+')[0]]) # WxH
+                # Position needs to be appended to input :0.0 -> :0.0+X,Y
+                # But ffmpeg uses -i :0.0+X,Y for offset.
+                # Slop gives WxH+X+Y. We need :0.0+X,Y
+                try:
+                    w_h, x, y = self.geometry.split('+')
+                    input_str = f":0.0+{x},{y}"
+                except ValueError:
+                    input_str = ":0.0"
+                cmd.extend(["-i", input_str])
+            else:
+                # Full screen
+                cmd.extend(["-video_size", str(self.config["resolucion"])])
+                cmd.extend(["-i", ":0.0"])
+
+            # Audio Input
+            if self.config["audio"]:
+                if shutil.which("pactl"):
+                    cmd.extend(["-f", "pulse", "-i", "default"])
+                else:
+                    print("Warning: PulseAudio/Pipewire not found. Audio disabled.")
+
+            # Encoding
+            cmd.extend([
+                "-c:v", self.config["codec"],
+                "-crf", str(get_crf(self.config["calidad"])),
+                "-b:v", f"{self.config['tasa_bits_video']}k",
+                "-preset", "ultrafast",
+                "-tune", "zerolatency"
+            ])
+            
+            if self.config["audio"]:
+                cmd.extend(["-c:a", self.config["codec_audio"], "-b:a", f"{self.config['tasa_bits_audio']}k"])
+
+            cmd.append(self.config["archivo_salida"])
+
+        elif self.server_type == "wayland":
+            cmd = ["wf-recorder"]
+            
+            if self.geometry:
+                # Slurp format: WxH+X,Y
+                cmd.extend(["--geometry", self.geometry])
+            
+            cmd.extend(["-f", self.config["archivo_salida"]])
+            cmd.extend(["-c", self.config["codec"]])
+            cmd.extend(["-p", f"crf={get_crf(self.config['calidad'])}"])
+            cmd.extend(["-p", f"b={self.config['tasa_bits_video']}K"])
+
+            if self.config["audio"]:
+                cmd.append("-a")
+
+        return cmd
+
+    def record(self):
+        cmd = self.build_command()
+        
+        print("\n" + "="*40)
+        print("STARTING RECORDING")
+        print(f"Command: {' '.join(cmd)}")
+        print("Press Ctrl+C to stop.")
+        print("="*40 + "\n")
+        
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"\nRecording failed with error: {e}")
+        except KeyboardInterrupt:
+            print("\nRecording stopped by user. Finalizing file...")
+        except Exception as e:
+            print(f"\nUnexpected error: {e}")
+
 def main():
-    print("Opciones de configuración:")
-    print("---------------------------")
-    print("1. Configuración personalizada")
-    print("2. Configuración automática (detecta resolución y otros parámetros)")
-    print("3. Importar configuración desde archivo")
-    print("---------------------------")
-    opcion = input("Ingrese su opción: ")
-
-    server_type = get_server_type()
-    if server_type is None:
-        print("No se detectó servidor de pantalla.")
+    recorder = ScreenRecorder()
+    recorder.check_dependencies()
+    
+    print("Screen Recorder Setup")
+    print("1. Custom Configuration")
+    print("2. Automatic Configuration")
+    print("3. Load Saved Configuration")
+    
+    try:
+        opcion = input("Select option: ").strip()
+    except KeyboardInterrupt:
+        print("\nExiting...")
         return
-
-    resolucion = get_monitor_resolution(server_type)
 
     if opcion == "1":
-        # Configuración personalizada
-        print("\nConfiguración personalizada:")
-        print("---------------------------")
-        input_resolucion = input(
-            f"Ingrese la resolución de la pantalla ({resolucion}): "
-        )
-        if input_resolucion:
-            resolucion = input_resolucion
-        framerate = input("Ingrese la tasa de frames por segundo (60): ")
-        if not framerate:
-            framerate = 60
-        else:
-            framerate = int(framerate)
-        archivo_salida = input("Ingrese el nombre del archivo de salida (output.mp4): ")
-        if not archivo_salida:
-            archivo_salida = "output.mp4"
-        codec = input("Ingrese el codec de video (libx264): ")
-        if not codec:
-            codec = "libx264"
-        calidad = input("Ingrese la calidad de video (alta): ")
-        if not calidad:
-            calidad = "alta"
-        tasa_bits_video = input("Ingrese la tasa de bits de video (5000): ")
-        if not tasa_bits_video:
-            tasa_bits_video = 5000
-        else:
-            tasa_bits_video = int(tasa_bits_video)
-        audio = input("¿Incluir audio? (s/n): ").lower()
-        while audio not in ["s", "n", ""]:
-            audio = input("La opción debe ser s o n. ¿Incluir audio? (s/n): ").lower()
-        if audio == "":
-            audio = False
-        else:
-            audio = audio == "s"
-        if audio:
-            codec_audio = input("Ingrese el codec de audio (aac): ")
-            if not codec_audio:
-                codec_audio = "aac"
-            tasa_bits_audio = input("Ingrese la tasa de bits de audio (256): ")
-            if not tasa_bits_audio:
-                tasa_bits_audio = 256
-            else:
-                tasa_bits_audio = int(tasa_bits_audio)
-        else:
-            codec_audio = "aac"
-            tasa_bits_audio = 256
-        microfono = input("¿Incluir microfono? (s/n): ").lower()
-        while microfono not in ["s", "n", ""]:
-            microfono = input(
-                "La opción debe ser s o n. ¿Incluir microfono? (s/n): "
-            ).lower()
-        if microfono == "":
-            microfono = False
-        else:
-            microfono = microfono == "s"
-        if microfono:
-            codec_microfono = input("Ingrese el codec de microfono (aac): ")
-            if not codec_microfono:
-                codec_microfono = "aac"
-            tasa_bits_microfono = input("Ingrese la tasa de bits de microfono (256): ")
-            if not tasa_bits_microfono:
-                tasa_bits_microfono = 256
-            else:
-                tasa_bits_microfono = int(tasa_bits_microfono)
-        else:
-            codec_microfono = "aac"
-            tasa_bits_microfono = 256
-
+        recorder.configure_interactive(use_defaults=False)
     elif opcion == "2":
-        # Configuración automática
-        print("\nConfiguración automática:")
-        print("---------------------------")
-        framerate = 60
-        archivo_salida = "output.mp4"
-        codec = "libx264"
-        calidad = "alta"
-        tasa_bits_video = 5000
-        audio = input("¿Incluir audio? (s/n): ").lower()
-        while audio not in ["s", "n"]:
-            audio = input("La opción debe ser s o n. ¿Incluir audio? (s/n): ").lower()
-        audio = audio == "s"
-        if audio:
-            codec_audio = "aac"
-            tasa_bits_audio = 256
-        else:
-            codec_audio = "aac"
-            tasa_bits_audio = 256
-        microfono = input("¿Incluir microfono? (s/n): ").lower()
-        while microfono not in ["s", "n"]:
-            microfono = input(
-                "La opción debe ser s o n. ¿Incluir microfono? (s/n): "
-            ).lower()
-        microfono = microfono == "s"
-        if microfono:
-            codec_microfono = "aac"
-            tasa_bits_microfono = 256
-        else:
-            codec_microfono = "aac"
-            tasa_bits_microfono = 256
-
+        recorder.configure_interactive(use_defaults=True)
     elif opcion == "3":
-        # Importar configuración desde archivo
-        print("\nImportar configuración desde archivo:")
-        print("---------------------------")
-        filename = input("Ingrese el nombre del archivo de configuración: ")
-        config = load_config(filename)
-        if config:
-            framerate = int(config["Tasa de frames"])
-            archivo_salida = config["Archivo de salida"]
-            codec = config["Codec de video"]
-            calidad = config["Calidad de video"]
-            tasa_bits_video = int(config["Tasa de bits de video"])
-            audio = config["Incluir audio"] == "Sí"
-            codec_audio = config["Codec de audio"]
-            tasa_bits_audio = int(config["Tasa de bits de audio"])
-            microfono = config["Incluir microfono"] == "Sí"
-            codec_microfono = config["Codec de microfono"]
-            tasa_bits_microfono = int(config["Tasa de bits de microfono"])
-        else:
-            print("No se pudo cargar la configuración.")
-            return
-
+        if not recorder.load_config():
+            print("No valid config found. Switching to automatic mode.")
+            recorder.configure_interactive(use_defaults=True)
     else:
-        print("Opción inválida. Saliendo...")
+        print("Invalid option. Exiting.")
         return
-
-    # Guardado de configuración en archivo
-    save_config(
-        {
-            "Resolución": resolucion,
-            "Tasa de frames": str(framerate),
-            "Archivo de salida": archivo_salida,
-            "Incluir audio": "Sí" if audio else "No",
-            "Incluir microfono": "Sí" if microfono else "No",
-            "Codec de video": codec,
-            "Calidad de video": calidad,
-            "Tasa de bits de video": str(tasa_bits_video),
-            "Tasa de bits de audio": str(tasa_bits_audio),
-            "Tasa de bits de microfono": str(tasa_bits_microfono),
-            "Codec de audio": codec_audio,
-            "Codec de microfono": codec_microfono,
-        },
-        "config.txt",
-    )
-
-    print("\nListo para grabar. Presione Ctrl+C para detener.")
-    input("Presione Enter para comenzar la grabación...")
-
-    grabar_pantalla(
-        resolucion,
-        framerate,
-        archivo_salida,
-        audio,
-        microfono,
-        codec,
-        calidad,
-        tasa_bits_video,
-        tasa_bits_audio,
-        tasa_bits_microfono,
-        codec_audio,
-        codec_microfono,
-        server_type,
-    )
-
+    
+    recorder.save_config()
+    
+    try:
+        input("\nPress Enter to start recording...")
+        recorder.record()
+    except KeyboardInterrupt:
+        print("\nCancelled.")
 
 if __name__ == "__main__":
     main()
