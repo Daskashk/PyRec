@@ -11,7 +11,7 @@ This script allows you to record your computer screen easily and intuitively, wi
 
 ## Requirements
 
-To use this script, you must:
+To use PyRec, you must:
 - Have **Python 3.X** installed on your system.
 - Install **ffmpeg** on your system.
 - **For X11 users**:
