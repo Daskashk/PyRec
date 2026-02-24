@@ -1,6 +1,6 @@
-# ffmpeg_screencap
+# PyRec
 
-This script allows you to record your computer screen easily and intuitively using ffmpeg, with robust security and area selection support.
+This script allows you to record your computer screen easily and intuitively, with robust security and area selection support.
 
 * [Requirements](#requirements)
 * [Usage](#usage)
@@ -25,7 +25,7 @@ To use this script, you must:
 
 ## Usage
 
-To use the script, simply run the command `python3 ffmpeg_screencap.py` in your terminal.
+To use the script, simply run the command `python3 pyrec.py` in your terminal.
 
 The script will guide you through three configuration modes:
 1. **Custom Configuration**: Allows you to manually set all parameters.
@@ -92,7 +92,7 @@ You can install the necessary dependencies on the following distributions using 
 *   **Homebrew**: `brew install slop slurp wf-recorder`
 
 **Note:** Ensure Python is installed. Most Linux distributions come with Python pre-installed. If not, install it using your distribution's package manager. 
- **⚠️ Warning**: Installing or change python version could direct to an unestable or brocken system.
+ **⚠️ Warning**: Installing or change python version could direct to unestable or brocken system.
 
 ## Troubleshooting
 
