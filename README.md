@@ -7,6 +7,7 @@ This script allows you to record your computer screen easily and intuitively usi
 * [Installation](#installation)
 * [Troubleshooting](#troubleshooting)
 * [Contact](#contact)
+* [Especial](#especial)
 
 ## Requirements
 
@@ -120,8 +121,9 @@ If you have questions, suggestions, or want to contribute, you can contact me th
 *   **Codeberg**: Just open an [issue](https://codeberg.org/daskashk/ffmpeg_screencap/issues) with your report or questions.
 *   **Matrix**: https://matrix.to/#/@narbb33:matrix.org
 
-## Especial: Comunidad de habla hispana
+## Especial 
 
-*También tengo una comunidad de habla hispana con un fuerte enfoque ene libertad, privacidad y justicia a la que estan invitados:*
+### Comunidad de habla hispana
+*También tengo una comunidad de habla hispana con un fuerte enfoque en libertad, privacidad y justicia a la que están invitados:*
 * *TOPIC Guild: https://matrix.to/#/#topic-guild:matrix.org*
 * *FOSSS TOPIC: https://matrix.to/#/#fosstopic:matrix.org (Espacio especializado en software libre)*
