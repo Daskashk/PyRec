@@ -120,6 +120,7 @@ If you have questions, suggestions, or want to contribute, you can contact me th
 *   **Codeberg**: Just open an [issue](https://codeberg.org/daskashk/ffmpeg_screencap/issues) with your report or questions.
 *   **Matrix**: https://matrix.to/#/@narbb33:matrix.org
 
+## Especial: Comunidad de habla hispana
 
 *También tengo una comunidad de habla hispana con un fuerte enfoque ene libertad, privacidad y justicia a la que estan invitados:*
 * *TOPIC Guild: https://matrix.to/#/#topic-guild:matrix.org*
