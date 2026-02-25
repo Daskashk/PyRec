@@ -21,7 +21,7 @@ To use PyRec, you must:
   - `wlr-randr` (for resolution detection).
   - `wf-recorder` (the recording backend for Wayland).
   - `slurp` (required for interactive area selection).
-- Copy the `ffmpeg_screencap.py` file to a directory and make it executable (`chmod +x ffmpeg_screencap.py`).
+- Copy the `pyrec.py` file to a directory and make it executable (`chmod +x ffmpeg_screencap.py`).
 
 ## Usage
 
