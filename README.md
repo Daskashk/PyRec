@@ -25,7 +25,7 @@ To use PyRec, you must:
 
 ## Usage
 
-To use the script, simply run the command `python3 pyrec.py` in your terminal.
+Simply run the command `python3 pyrec.py` in your terminal.
 
 The script will guide you through three configuration modes:
 1. **Custom Configuration**: Allows you to manually set all parameters.
