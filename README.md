@@ -51,6 +51,8 @@ The default values are as follows:
 
 ## Installation
 
+For openSUSE users, I mantain an OBS repo for easy install and update: [![build result](https://build.opensuse.org/projects/home:Nara/packages/pyrec-git/badge.svg?type=default)](https://build.opensuse.org/package/show/home:Nara/pyrec-git)
+
 You can install the necessary dependencies on the following distributions using the commands below (run as root or with `sudo`):
 
 ### Dependencies, most be run as root when necesary:
@@ -91,7 +93,8 @@ You can install the necessary dependencies on the following distributions using 
 *   **OpenMandriva**: `dnf install slop slurp wf-recorder`
 *   **Homebrew**: `brew install slop slurp wf-recorder`
 
-**Note:** Ensure Python is installed. Most Linux distributions come with Python pre-installed. If not, install it using your distribution's package manager. 
+**Note:** Ensure Python is installed. Most Linux distributions come with Python pre-installed. If not, install it using your distribution's package manager.
+
  **⚠️ Warning**: Installing or change python version could direct to unestable or brocken system.
 
 ## Troubleshooting
